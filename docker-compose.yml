@@ -24,7 +24,7 @@ services:
       retries: 3
       start_period: 60s
     env_file: ots_config.env
-
+    
   ots_cot_parser:
     image: ghcr.io/brian7704/ots_cot_parser:master
     container_name: ots_cot_parser
@@ -78,35 +78,36 @@ services:
     image: ghcr.io/brian7704/opentakserver-ui:master
     container_name: ots-webui
     hostname: opentakserver-webui
+    
 
-  nginx-proxy:
-    build:
-      context: .
-      dockerfile: ots/configs/nginx/Dockerfile
-    container_name: nginx-proxy
-    hostname: nginx-proxy
-    restart: unless-stopped
-    ports:
-      - "0.0.0.0:80:80" # HTTP Web UI
-      - "0.0.0.0:443:443" # HTTPS Web UI
-      - "0.0.0.0:8080:8080" # HTTP API requests to OpenTAKServer port 8081
-      - "0.0.0.0:8443:8443" # HTTPS API requests to OpenTAKServer port 8081
-      - "0.0.0.0:8446:8446" # Proxy for certificate enrollment to OpenTAKServer port 8081
-      - "0.0.0.0:8883:8883" # Proxy for MQTT / Meshtastic to Rabbitmq port 1883
-    volumes:
-      - "./ots/ca:/app/ots/ca:ro"
-      - "./ots/configs/nginx/templates:/etc/nginx/templates:ro"
-      - ./ots/configs/nginx/letsencrypt/www:/var/www/certbot/:rw
-      - ./ots/configs/nginx/letsencrypt/certs/:/etc/letsencrypt/:rw
-    depends_on:
-      ots:
-        condition: service_healthy
+ # nginx-proxy:
+  #  build:
+   #   context: .
+    #  dockerfile: ots/configs/nginx/Dockerfile
+ #   container_name: nginx-proxy
+ #   hostname: nginx-proxy
+ #   restart: unless-stopped
+ #   ports:
+ #     - "0.0.0.0:80:80" # HTTP Web UI
+ #     - "0.0.0.0:443:443" # HTTPS Web UI
+ #     - "0.0.0.0:8080:8080" # HTTP API requests to OpenTAKServer port 8081
+ #     - "0.0.0.0:8443:8443" # HTTPS API requests to OpenTAKServer port 8081
+ #     - "0.0.0.0:8446:8446" # Proxy for certificate enrollment to OpenTAKServer port 8081
+ #     - "0.0.0.0:8883:8883" # Proxy for MQTT / Meshtastic to Rabbitmq port 1883
+ #   volumes:
+ #     - "./ots/ca:/app/ots/ca:ro"
+ #     - "./ots/configs/nginx/templates:/etc/nginx/templates:ro"
+ #     - ./ots/configs/nginx/letsencrypt/www:/var/www/certbot/:rw
+ #     - ./ots/configs/nginx/letsencrypt/certs/:/etc/letsencrypt/:rw
+ #   depends_on:
+ #     ots:
+ #       condition: service_healthy
 
-  certbot:
-    image: certbot/certbot:latest
-    volumes:
-      - ./ots/configs/nginx/letsencrypt/www:/var/www/certbot/:rw
-      - ./ots/configs/nginx/letsencrypt/certs/:/etc/letsencrypt/:rw
+ # certbot:
+ #   image: certbot/certbot:latest
+ #   volumes:
+ #     - ./ots/configs/nginx/letsencrypt/www:/var/www/certbot/:rw
+ #     - ./ots/configs/nginx/letsencrypt/certs/:/etc/letsencrypt/:rw
 
   rabbitmq:
     image: rabbitmq:latest
