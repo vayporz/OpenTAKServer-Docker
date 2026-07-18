@@ -1,3 +1,62 @@
+Claude is responding
+
+So i've never done anything in Git.
+Devised beginner-friendly browser-based Git workflow
+
+No problem — you don't need the git command line for this. GitHub lets you fork and edit files entirely in the browser. Here's the whole thing click-by-click.
+
+1. Get a GitHub account (skip if you already have one) — sign up free at github.com.
+
+2. Fork the repo
+Go to https://github.com/brian7704/OpenTAKServer-Docker, click Fork (top right), confirm. You now have your own copy at github.com/<your-username>/OpenTAKServer-Docker.
+
+3. Edit docker-compose.yml in the browser
+In your fork, click docker-compose.yml, then the pencil icon (top right of the file view) to edit. Select all the existing text and delete it, then paste the full replacement below — it's the original with nginx-proxy and certbot removed and the NPM network added.
+Ran a command, created a file
+
+so here's what I have for the docker-compose-yml so far, but I need you to make edits:
+Identified missing network configurations and planned cleanup edits
+
+Good catches on your end — you cleaned up the timezone volume comment and had already commented out nginx-proxy/certbot correctly. Here's the file with the last pieces added:
+
+    networks: [default, npm_proxy] on ots, ots-webui, and rabbitmq (the three services NPM needs to reach)
+    The npm_proxy external network definition at the bottom
+    Fully deleted the commented-out nginx-proxy/certbot blocks rather than leaving them commented, since dead config tends to cause "wait, is this active?" confusion six months from now
+
+One thing you still need to fill in: CHANGE_ME_TO_YOUR_NPM_NETWORK_NAME at the very bottom. Find your NPM container's actual network with:
+
+docker inspect <your-npm-container-name> --format '{{json .NetworkSettings.Networks}}'
+
+That prints the network name(s) it's attached to — swap that in for the placeholder.
+Presented file
+
+so here's another wrinkle. npm is running in docker on another physical server in the homelab, not in docker on this server. are there other changes that will need to be made
+Reconfigured cross-host networking architecture and port exposure strategy
+
+Yes — that changes things meaningfully. Docker bridge networks (which is what external: true was attaching to) only exist within a single Docker host. Two separate physical machines can't share one that way without setting up Docker Swarm overlay networking, which is a much bigger lift than this needs. So scrap the npm_proxy network entirely and go back to plain host-port publishing — NPM reaches OTS the same way it reaches anything else off-host: over the LAN by IP or hostname.
+
+What that means concretely:
+
+    ots already publishes 8081:8081 to the host with no IP restriction, so it's already reachable from the other server at <this-host-ip>:8081. No change needed there.
+    ots-webui currently has no ports: mapping at all — it was only relying on the (now scrapped) shared network. It needs an explicit host port published so the other machine can reach it. I don't know its internal listen port for certain, so check it once the container's running: docker port ots-webui or docker logs ots-webui (worth confirming rather than guessing wrong on something you'll be pointing a reverse proxy at).
+    rabbitmq — only add a port mapping (1883:1883) if you actually want MQTT/Meshtastic reachable from NPM; skip it otherwise.
+    Drop the whole networks: block at the bottom and the - npm_proxy lines under ots, ots-webui, and rabbitmq.
+
+In NPM, the proxy host "Forward Hostname/IP" field changes from a container name (ots:8081) to this Docker host's actual LAN IP or its home.arpa DNS name if you've got an AdGuard entry for it — e.g. optiplex.home.arpa:8081 instead of ots:8081.
+
+One more thing worth checking: whatever firewall is running on this host (ufw, firewalld, or Portainer host's default) needs to allow those ports in from the NPM server's IP specifically, since they're now genuinely LAN-exposed rather than container-internal.
+Ran a command, viewed a file
+
+That fixed the port line (0.0.0.0:CHANGE_ME:CHANGE_ME still needs real numbers once you've confirmed the webui's internal port) and left the MQTT proxy commented out by default since it's optional.
+Presented file
+
+this is all sitting in a fork of a github repository. So before I put specific information about my homelab into this, is there a way to secure it?
+Crystallizing
+Want to be notified when Claude responds?
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Docker compose · YML
 services:
   ots:
     build:
@@ -24,7 +83,7 @@ services:
       retries: 3
       start_period: 60s
     env_file: ots_config.env
-    
+ 
   ots_cot_parser:
     image: ghcr.io/brian7704/ots_cot_parser:master
     container_name: ots_cot_parser
@@ -40,7 +99,7 @@ services:
       ots:
         condition: service_healthy
     env_file: ots_config.env
-
+ 
   ots_eud_handler:
     image: ghcr.io/brian7704/ots_eud_handler:master
     container_name: ots_eud_handler
@@ -55,7 +114,7 @@ services:
     volumes:
       - "./ots:/app/ots:rw"
     env_file: ots_config.env
-
+ 
   ots_eud_handler_ssl:
     image: ghcr.io/brian7704/ots_eud_handler_ssl:master
     container_name: ots_eud_handler_ssl
@@ -73,49 +132,21 @@ services:
     depends_on:
       ots:
         condition: service_healthy
-
+ 
   ots-webui:
     image: ghcr.io/brian7704/opentakserver-ui:master
     container_name: ots-webui
     hostname: opentakserver-webui
-    
-
- # nginx-proxy:
-  #  build:
-   #   context: .
-    #  dockerfile: ots/configs/nginx/Dockerfile
- #   container_name: nginx-proxy
- #   hostname: nginx-proxy
- #   restart: unless-stopped
- #   ports:
- #     - "0.0.0.0:80:80" # HTTP Web UI
- #     - "0.0.0.0:443:443" # HTTPS Web UI
- #     - "0.0.0.0:8080:8080" # HTTP API requests to OpenTAKServer port 8081
- #     - "0.0.0.0:8443:8443" # HTTPS API requests to OpenTAKServer port 8081
- #     - "0.0.0.0:8446:8446" # Proxy for certificate enrollment to OpenTAKServer port 8081
- #     - "0.0.0.0:8883:8883" # Proxy for MQTT / Meshtastic to Rabbitmq port 1883
- #   volumes:
- #     - "./ots/ca:/app/ots/ca:ro"
- #     - "./ots/configs/nginx/templates:/etc/nginx/templates:ro"
- #     - ./ots/configs/nginx/letsencrypt/www:/var/www/certbot/:rw
- #     - ./ots/configs/nginx/letsencrypt/certs/:/etc/letsencrypt/:rw
- #   depends_on:
- #     ots:
- #       condition: service_healthy
-
- # certbot:
- #   image: certbot/certbot:latest
- #   volumes:
- #     - ./ots/configs/nginx/letsencrypt/www:/var/www/certbot/:rw
- #     - ./ots/configs/nginx/letsencrypt/certs/:/etc/letsencrypt/:rw
-
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:CHANGE_ME:CHANGE_ME" # confirm ots-webui'''s internal port with 'docker port ots-webui' or 'docker logs ots-webui' before setting this
+ 
   rabbitmq:
     image: rabbitmq:latest
     container_name: rabbitmq
     hostname: rabbitmq
     restart: unless-stopped
     volumes:
-     # - "/etc/timezone:/etc/timezone:ro" --Removed
       - "./ots/configs/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro"
       - "./ots/configs/rabbitmq/99-opentakserver.conf:/etc/rabbitmq/conf.d/99-opentakserver.conf:ro"
     healthcheck:
@@ -123,13 +154,14 @@ services:
       interval: 30s
       timeout: 30s
       retries: 3
-
+    # ports:
+    #   - "1883:1883" # uncomment only if you want MQTT/Meshtastic reachable from NPM on the other host
+ 
   mediamtx:
     image: bluenviron/mediamtx:1.13.0-ffmpeg
     container_name: mediamtx
     hostname: mediamtx
     restart: unless-stopped
-#    network_mode: host
     ports:
       - "0.0.0.0:1935:1935" # RTMP video streams
       - "0.0.0.0:1936:1936" # RTMPS video streams
@@ -145,7 +177,7 @@ services:
     volumes:
       - "./ots:/app/ots"
       - "./ots/mediamtx/mediamtx.yml:/mediamtx.yml"
-
+ 
   ots-db:
     image: postgis/postgis:18-3.6
     container_name: ots-db
@@ -161,3 +193,5 @@ services:
       retries: 10
     ports:
       - "5432:5432"
+ 
+
